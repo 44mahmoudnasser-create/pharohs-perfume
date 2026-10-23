@@ -1,0 +1,56 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Same visual language as the Electro George factory system */
+:root { direction: rtl; color-scheme: dark; }
+
+body {
+  background: #0f1117;
+  color: #e2e8f0;
+  font-family: 'Cairo', sans-serif;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #1a1d27; }
+::-webkit-scrollbar-thumb { background: #2d3148; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #3b82f6; }
+
+@layer components {
+  .eg-table { @apply w-full border-collapse text-sm; }
+  .eg-table th { @apply bg-[#2d3148] text-[#94a3b8] font-semibold px-4 py-3 text-right border-b border-[#2d3148] whitespace-nowrap; }
+  .eg-table td { @apply px-4 py-3 border-b border-[#2d3148]/50 text-right; }
+  .eg-table tr:hover td { @apply bg-[#222536]; }
+
+  .eg-card { @apply bg-[#1a1d27] rounded-xl border border-[#2d3148]/50 p-5; }
+  .eg-badge { @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium; }
+
+  .eg-input {
+    @apply w-full bg-[#222536] border border-[#2d3148] rounded-lg px-3 py-2.5
+           text-[#e2e8f0] placeholder-[#94a3b8] focus:outline-none
+           focus:border-[#3b82f6] focus:ring-1 focus:ring-[#3b82f6]/30
+           transition text-sm;
+  }
+  .eg-select { @apply eg-input appearance-none cursor-pointer; }
+  .eg-label { @apply block text-xs font-medium text-[#94a3b8] mb-1.5; }
+
+  .eg-btn {
+    @apply inline-flex items-center gap-2 px-4 py-2.5 rounded-lg font-medium
+           text-sm transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .eg-btn-primary { @apply eg-btn bg-[#3b82f6] text-white hover:bg-[#2563eb]; }
+  .eg-btn-success { @apply eg-btn bg-[#10b981] text-white hover:bg-[#059669]; }
+  .eg-btn-danger  { @apply eg-btn bg-[#ef4444] text-white hover:bg-[#dc2626]; }
+  .eg-btn-ghost   { @apply eg-btn bg-[#2d3148]/50 text-[#e2e8f0] hover:bg-[#2d3148]; }
+
+  .eg-modal-backdrop {
+    @apply fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4;
+  }
+  .eg-modal {
+    @apply bg-[#1a1d27] rounded-2xl border border-[#2d3148] w-full max-w-lg max-h-[90vh]
+           overflow-y-auto shadow-2xl;
+  }
+}
+
+/* Numbers in inputs read left-to-right inside the RTL layout */
+input[type="number"] { direction: ltr; text-align: right; }

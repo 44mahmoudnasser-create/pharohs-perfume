@@ -242,7 +242,26 @@ grants). It covers:
 
 ---
 
-## 5. Deployment to GitHub Pages
+## 5. Deployment
+
+### Option A — Vercel
+
+`vercel.json` already sets the Vite build (`npm run build` → `dist`), long-term caching for hashed
+assets, and basic security headers.
+
+1. Sign in at vercel.com with GitHub → **Add New… → Project** → import this repository.
+2. Keep the detected settings (Framework: Vite, Root Directory: `./`).
+3. **Environment Variables** (Production and Preview):
+   - `VITE_SUPABASE_URL` = `https://YOUR-PROJECT-REF.supabase.co`
+   - `VITE_SUPABASE_ANON_KEY` = your anon / publishable key
+   - do **not** set `VITE_BASE_PATH` (Vercel serves from `/`)
+4. **Deploy.** Every push to `main` then redeploys production, and every pull request gets a preview URL.
+5. In Supabase → Authentication → URL Configuration, set **Site URL** to your Vercel URL
+   (e.g. `https://pharohs-perfume.vercel.app`) and add it to **Redirect URLs**.
+
+`VITE_*` variables are baked in at build time. After changing them in Vercel, **redeploy** so they take effect.
+
+### Option B — GitHub Pages
 
 1. Push this folder to a GitHub repository (branch `main`).
 2. Repository **Settings → Pages → Source: GitHub Actions**.
@@ -309,4 +328,5 @@ or any `VITE_*` variable. Anything prefixed `VITE_` ends up in the public JavaSc
 | Sale rejected "لا توجد قاعدة استهلاك…" | Add the rule in قواعد الاستهلاك والأسعار for that oil × size |
 | Sale rejected "المخزون غير كافٍ…" | Record a receipt in المخزون, or (not recommended) enable negative stock |
 | `db push` says a migration was already applied | You ran it in the SQL editor; use `supabase migration repair --status applied <version>` |
-| Login works locally but not on Pages | Add the Pages URL to Authentication → URL Configuration |
+| Login works locally but not on Pages / Vercel | Add the deployed URL to Authentication → URL Configuration |
+| Vercel site shows the "Supabase setup required" screen | The env vars were missing at build time: add them in Vercel → Settings → Environment Variables, then redeploy |

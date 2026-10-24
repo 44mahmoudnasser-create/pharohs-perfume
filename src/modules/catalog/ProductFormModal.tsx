@@ -29,7 +29,7 @@ export default function ProductFormModal({
     sku: product?.sku ?? "",
     description: product?.description ?? "",
     image_url: product?.image_url ?? "",
-    sale_mode: product?.sale_mode ?? saleModes.modes[0]?.mode ?? "stock_item",
+    sale_mode: product?.sale_mode ?? "stock_item",
     inventory_item_id: product?.inventory_item_id ?? null,
     unit_price: product?.unit_price ?? null,
     sort_order: product?.sort_order ?? 0,
@@ -38,7 +38,10 @@ export default function ProductFormModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  const mode = saleModes.get(form.sale_mode);
+  // the sale mode comes from the category; products never choose it themselves
+  const selectedCategory = categories.find(c => c.id === form.category_id);
+  const saleModeKey = selectedCategory?.sale_mode ?? "stock_item";
+  const mode = saleModes.get(saleModeKey);
   const set = <K extends keyof ProductInput>(k: K, v: ProductInput[K]) => setForm(f => ({ ...f, [k]: v }));
 
   const save = async () => {
@@ -53,6 +56,7 @@ export default function ProductFormModal({
     try {
       const id = await saveProduct({
         ...form,
+        sale_mode: saleModeKey,
         name: form.name.trim(),
         sku: form.sku?.trim() || null,
         description: form.description?.trim() || null,
@@ -88,11 +92,8 @@ export default function ProductFormModal({
               {categories.map(c => <option key={c.id} value={c.id}>{c.name}{c.active ? "" : " (متوقف)"}</option>)}
             </select>
           </Field>
-          <Field label="طريقة البيع" required hint={mode?.hint}>
-            <select value={form.sale_mode} onChange={e => set("sale_mode", e.target.value)} className="eg-select"
-              disabled={!!product}>
-              {saleModes.modes.map(m => <option key={m.mode} value={m.mode}>{m.label}</option>)}
-            </select>
+          <Field label="طريقة البيع" hint={mode?.hint ?? "تُحدد من التصنيف"}>
+            <div className="eg-input !text-subtext">{saleModes.label(saleModeKey)}</div>
           </Field>
         </div>
 

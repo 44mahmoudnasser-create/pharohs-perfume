@@ -16,11 +16,15 @@ import SaleDetailModal from "./SaleDetailModal";
 
 type Status = "all" | "completed" | "cancelled";
 
+// Totals are summed from the lines this user can see, so a seller never sees
+// the value of lines outside their granted categories.
+const visibleTotal = (s: SaleSummary) => s.sale_lines.reduce((a, l) => a + Number(l.line_total), 0);
+
 export default function SalesPage() {
   const [params, setParams] = useSearchParams();
   const { can } = useAuth();
   const { currency } = useShop();
-  const [from, setFrom] = useState(daysAgo(6));
+  const [from, setFrom] = useState(() => (can("sales.viewAll") ? daysAgo(6) : isoDate()));
   const [to, setTo] = useState(isoDate());
   const [status, setStatus] = useState<Status>("all");
   const [search, setSearch] = useState("");
@@ -37,7 +41,7 @@ export default function SalesPage() {
   }), [sales.data, search]);
 
   const completed = (sales.data ?? []).filter(s => s.status === "completed");
-  const revenue = completed.reduce((a, s) => a + Number(s.total), 0);
+  const revenue = completed.reduce((a, s) => a + visibleTotal(s), 0);
 
   const open = (id: number | null) => setParams(p => { if (id) p.set("open", String(id)); else p.delete("open"); return p; });
 
@@ -50,8 +54,8 @@ export default function SalesPage() {
       </span>) },
     { key: "customer", header: "العميل", render: s => s.customer_name ?? <span className="text-subtext">—</span> },
     { key: "seller", header: "البائع", render: s => <span className="text-xs">{(s.created_by && names.data?.[s.created_by]) || "—"}</span> },
-    { key: "total", header: "الإجمالي", sortValue: s => Number(s.total), render: s => (
-      <span className={`tabular-nums font-semibold ${s.status === "cancelled" ? "line-through text-subtext" : ""}`}>{fmtMoney(s.total, currency)}</span>) },
+    { key: "total", header: "الإجمالي", sortValue: s => visibleTotal(s), render: s => (
+      <span className={`tabular-nums font-semibold ${s.status === "cancelled" ? "line-through text-subtext" : ""}`}>{fmtMoney(visibleTotal(s), currency)}</span>) },
     { key: "status", header: "الحالة", sortValue: s => s.status, render: s =>
       <Badge tone={s.status === "completed" ? "success" : "danger"}>{s.status === "completed" ? "مكتملة" : "ملغاة"}</Badge> },
   ];

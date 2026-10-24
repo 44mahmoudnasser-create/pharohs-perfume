@@ -7,6 +7,7 @@ export type Category = {
   description: string | null;
   sort_order: number;
   active: boolean;
+  sale_mode: string;
   created_at: string;
   updated_at: string;
   product_count: number;
@@ -30,7 +31,7 @@ export type Product = {
   inventory_item: { name: string; unit: string } | null;
 };
 
-export type CategoryInput = Pick<Category, "name" | "description" | "sort_order" | "active">;
+export type CategoryInput = Pick<Category, "name" | "description" | "sort_order" | "active" | "sale_mode">;
 export type ProductInput = Pick<Product,
   "category_id" | "name" | "sku" | "description" | "image_url" | "sale_mode" |
   "inventory_item_id" | "unit_price" | "sort_order" | "active">;
@@ -47,6 +48,14 @@ export async function saveCategory(input: CategoryInput, id?: number) {
     ? supabase.from("categories").update(input).eq("id", id)
     : supabase.from("categories").insert(input);
   unwrap(await q.select("id").single());
+}
+
+export async function deleteCategory(id: number) {
+  unwrap(await supabase.from("categories").delete().eq("id", id).select("id").single());
+}
+
+export async function deleteProduct(id: number) {
+  unwrap(await supabase.from("products").delete().eq("id", id).select("id").single());
 }
 
 export async function setCategoryActive(id: number, active: boolean) {

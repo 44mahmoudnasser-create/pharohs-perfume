@@ -89,14 +89,28 @@ Key business rules enforced in the database:
 
 | Permission | admin | manager | seller |
 |---|:-:|:-:|:-:|
-| Sell | ✔ | ✔ | ✔ |
-| See all sales / cancel sales | ✔ | ✔ | own sales only / – |
+| Sell | ✔ | ✔ | ✔ (only in granted categories) |
+| See all sales / cancel sales | ✔ | ✔ | – (today's invoices with a granted category, granted lines only) |
 | Manage categories & products | ✔ | ✔ | – |
-| Stock receipts, adjustments, stocktake, movement history | ✔ | ✔ | – |
+| Stock receipts, adjustments, stocktake, movement history | ✔ | ✔ | – (page hidden) |
 | Edit prices & per-product restrictions | ✔ | ✔ | – |
 | Edit bottle sizes, oil types, consumption rules | ✔ | – | – |
+| Delete unsold items | ✔ | ✔ (not sizes / oils) | – |
 | Reports | ✔ | ✔ | – |
-| Settings & users | ✔ | – | – |
+| Settings & users, seller category grants | ✔ | – | – |
+
+**Seller category grants.** Settings → users → choose a seller → tick the categories they may see and sell in.
+A seller with no ticked categories sees and sells nothing. Sellers see only today's invoices, and inside each
+invoice only the lines from their categories.
+
+**Deleting.** Anything added can be deleted, as long as nothing was sold from it and it has no stock movements
+(sizes and oils also need their stock item to have no movements). Otherwise the app asks you to deactivate it instead.
+A category can't be deleted while it still has products. Rules and prices are removed along with their size or oil.
+
+**Sale mode.** Each category sets how its products are sold (perfume formulation or ready-made). Products inherit it,
+so you never pick it per product. It can't be changed while the category has products.
+
+**New oils and sizes** are enabled automatically on every product that restricts oils or sizes.
 
 - The role is read from `app_users` (database), **never** from JWT or user metadata.
 - New sign-ups are created **inactive**. An inactive user can read and do nothing.

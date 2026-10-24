@@ -12,7 +12,8 @@ export type SaleSummary = {
   created_at: string;
   cancelled_at: string | null;
   cancel_reason: string | null;
-  sale_lines: { product_name: string; quantity: number }[];
+  // only the lines this user may see (RLS); totals shown in the UI come from these
+  sale_lines: { product_name: string; quantity: number; line_total: number }[];
 };
 
 export type SaleLineDetail = {
@@ -67,7 +68,7 @@ export async function cancelSale(saleId: number, reason: string) {
 
 export async function listSales(from: string, to: string, status: string): Promise<SaleSummary[]> {
   let q = supabase.from("sales")
-    .select("id, status, customer_name, notes, total, created_by, created_at, cancelled_at, cancel_reason, sale_lines(product_name, quantity)")
+    .select("id, status, customer_name, notes, total, created_by, created_at, cancelled_at, cancel_reason, sale_lines(product_name, quantity, line_total)")
     .gte("created_at", new Date(from + "T00:00:00").toISOString())
     .lt("created_at", new Date(new Date(to + "T00:00:00").getTime() + 86400000).toISOString())
     .order("created_at", { ascending: false })
@@ -88,7 +89,7 @@ export async function getSale(id: number): Promise<SaleDetail> {
     .sort((a, b) => a.line_no - b.line_no);
   return {
     ...row,
-    sale_lines: lines.map(l => ({ product_name: l.product_name, quantity: l.quantity })),
+    sale_lines: lines.map(l => ({ product_name: l.product_name, quantity: l.quantity, line_total: l.line_total })),
     lines,
   };
 }

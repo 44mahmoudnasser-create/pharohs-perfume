@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Pencil, Plus } from "lucide-react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
+import ConfirmDialog from "@/core/ui/ConfirmDialog";
 import PageHeader, { PageBody } from "@/core/ui/PageHeader";
 import DataTable, { type Column } from "@/core/ui/DataTable";
 import { AsyncBoundary } from "@/core/ui/States";
@@ -13,7 +14,7 @@ import { useAuth } from "@/core/auth/AuthProvider";
 import { errorMessage } from "@/core/lib/errors";
 import { fmtInt, fmtNum } from "@/core/lib/format";
 import { listStock } from "@/modules/inventory/api";
-import { listBottleSizes, listOilTypes, listRules, saveOilType, type OilType } from "./api";
+import { deleteOilType, listBottleSizes, listOilTypes, listRules, saveOilType, type OilType } from "./api";
 
 export default function OilTypesPage() {
   const data = useAsync(async () => {
@@ -27,6 +28,7 @@ export default function OilTypesPage() {
   const [editing, setEditing] = useState<OilType | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [rulesFor, setRulesFor] = useState<OilType | null>(null);
+  const [toDelete, setToDelete] = useState<OilType | null>(null);
 
   const stockOf = (o: OilType) => data.data?.stock.find(x => x.item_id === o.inventory_item_id);
   const rulesOf = (o: OilType) => (data.data?.rules ?? []).filter(r => r.oil_type_id === o.id);
@@ -67,6 +69,9 @@ export default function OilTypesPage() {
         <button onClick={() => toggle(o)} className={`text-xs hover:underline ${o.active ? "text-danger" : "text-success"}`}>
           {o.active ? "إيقاف" : "تفعيل"}
         </button>
+        <button onClick={() => setToDelete(o)} className="text-xs text-danger hover:underline inline-flex items-center gap-1">
+          <Trash2 className="w-3 h-3" />حذف
+        </button>
       </div>) }] : []),
   ];
 
@@ -86,6 +91,15 @@ export default function OilTypesPage() {
         </AsyncBoundary>
       </PageBody>
 
+      <ConfirmDialog open={!!toDelete} onClose={() => setToDelete(null)} title="حذف نوع الزيت" confirmLabel="حذف"
+        message={toDelete ? `حذف "${toDelete.name}" مع قواعد الاستهلاك والأسعار الخاصة به وصنف الزيت؟ لا يمكن الحذف إذا سُجلت عليه مبيعات أو حركات مخزون، وفي هذه الحالة استخدم الإيقاف.` : ""}
+        onConfirm={async () => {
+          if (!toDelete) return;
+          await deleteOilType(toDelete.id);
+          notify.success(`تم حذف ${toDelete.name}`);
+          setToDelete(null);
+          await data.reload();
+        }} />
       {formOpen && (
         <OilForm oil={editing} onClose={() => setFormOpen(false)}
           onSaved={async () => { setFormOpen(false); notify.success("تم حفظ نوع الزيت"); await data.reload(); }} />

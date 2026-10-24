@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { ClipboardCheck, PackagePlus, Pencil, Plus, SlidersHorizontal } from "lucide-react";
+import { ClipboardCheck, PackagePlus, Pencil, Plus, SlidersHorizontal, Trash2 } from "lucide-react";
+import ConfirmDialog from "@/core/ui/ConfirmDialog";
 import PageHeader, { PageBody } from "@/core/ui/PageHeader";
 import DataTable, { type Column } from "@/core/ui/DataTable";
 import { AsyncBoundary, EmptyState } from "@/core/ui/States";
@@ -15,7 +16,7 @@ import { errorMessage } from "@/core/lib/errors";
 import { cn } from "@/core/lib/cn";
 import { fmtDateTime, fmtQty, UNIT_LABEL } from "@/core/lib/format";
 import {
-  GROUP_LABEL, MOVEMENT_LABEL, adjustStock, listMovements, listStock, receiveStock, recordCount, saveItem,
+  GROUP_LABEL, MOVEMENT_LABEL, adjustStock, deleteItem, listMovements, listStock, receiveStock, recordCount, saveItem,
   type ItemGroup, type ItemInput, type StockRow, type Unit,
 } from "./api";
 
@@ -50,6 +51,7 @@ function StockTab() {
   const [lowOnly, setLowOnly] = useState(false);
   const [op, setOp] = useState<Op | null>(null);
   const [itemForm, setItemForm] = useState<{ row: StockRow | null } | null>(null);
+  const [deleteRow, setDeleteRow] = useState<StockRow | null>(null);
 
   const rows = useMemo(() => (stock.data ?? []).filter(r =>
     (group === "all" || r.item_group === group) && (!lowOnly || (r.is_low && r.active)) &&
@@ -89,6 +91,11 @@ function StockTab() {
         <button onClick={() => setItemForm({ row: r })} className="text-xs text-subtext hover:text-text" aria-label="تعديل الصنف">
           <Pencil className="w-3 h-3" />
         </button>
+        {!(r.oil_type_id || r.bottle_size_id) && (
+          <button onClick={() => setDeleteRow(r)} className="text-xs text-danger hover:text-danger/80" aria-label="حذف الصنف">
+            <Trash2 className="w-3 h-3" />
+          </button>
+        )}
       </div>) }] : []),
   ];
 
@@ -117,6 +124,15 @@ function StockTab() {
         <StockOperationModal op={op} onClose={() => setOp(null)}
           onDone={async msg => { setOp(null); notify.success(msg); await stock.reload(); }} />
       )}
+      <ConfirmDialog open={!!deleteRow} onClose={() => setDeleteRow(null)} title="حذف صنف المخزون" confirmLabel="حذف"
+        message={deleteRow ? `حذف "${deleteRow.name}" نهائياً؟ لا يمكن الحذف إذا كان له حركات مخزون، وفي هذه الحالة استخدم الإيقاف من التعديل.` : ""}
+        onConfirm={async () => {
+          if (!deleteRow) return;
+          await deleteItem(deleteRow.item_id);
+          notify.success(`تم حذف ${deleteRow.name}`);
+          setDeleteRow(null);
+          await stock.reload();
+        }} />
       {itemForm && (
         <ItemFormModal row={itemForm.row} onClose={() => setItemForm(null)}
           onSaved={async () => { setItemForm(null); notify.success("تم حفظ الصنف"); await stock.reload(); }} />

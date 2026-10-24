@@ -1,5 +1,5 @@
 // UI permissions per role. They only decide what is shown; the same rules are
-// enforced in the database (RLS + function checks — see migration 0700).
+// enforced in the database (RLS + function checks — see migrations 0700 and 0800).
 
 export const ROLE_LABEL: Record<string, string> = {
   admin: "مدير النظام",
@@ -9,13 +9,14 @@ export const ROLE_LABEL: Record<string, string> = {
 
 export const roleLabel = (role?: string | null) => (role && ROLE_LABEL[role]) || "مستخدم";
 
-const SELLER = ["sales.create", "inventory.view"] as const;
+// A seller only sells. Which categories they see is decided per user by an admin.
+const SELLER = ["sales.create"] as const;
 
 const MANAGER = [
   ...SELLER,
+  "inventory.view", "inventory.manage", "inventory.history",
   "sales.viewAll", "sales.cancel",
   "catalog.manage",
-  "inventory.manage", "inventory.history",
   "perfume.view", "prices.manage",
   "reports.view",
   "audit.view",

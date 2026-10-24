@@ -68,8 +68,10 @@ export default function SaleDetailModal({
             </div>
 
             <div className="flex items-center justify-between border-t border-border/50 pt-3">
-              <span className="text-sm text-subtext">الإجمالي</span>
-              <span className="text-xl font-extrabold tabular-nums">{fmtMoney(s.total, currency)}</span>
+              <span className="text-sm text-subtext">إجمالي البنود المعروضة</span>
+              <span className="text-xl font-extrabold tabular-nums">
+                {fmtMoney(s.lines.reduce((a, l) => a + Number(l.line_total), 0), currency)}
+              </span>
             </div>
 
             {s.status === "completed" && can("sales.cancel") && (

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { Pencil, Plus } from "lucide-react";
+import { Pencil, Plus, Trash2 } from "lucide-react";
+import ConfirmDialog from "@/core/ui/ConfirmDialog";
 import PageHeader, { PageBody } from "@/core/ui/PageHeader";
 import DataTable, { type Column } from "@/core/ui/DataTable";
 import { AsyncBoundary } from "@/core/ui/States";
@@ -12,7 +13,7 @@ import { useAuth } from "@/core/auth/AuthProvider";
 import { errorMessage } from "@/core/lib/errors";
 import { fmtInt, fmtNum } from "@/core/lib/format";
 import { listStock } from "@/modules/inventory/api";
-import { listBottleSizes, listOilTypes, listRules, saveBottleSize, type BottleSize } from "./api";
+import { deleteBottleSize, listBottleSizes, listOilTypes, listRules, saveBottleSize, type BottleSize } from "./api";
 
 export default function BottleSizesPage() {
   const data = useAsync(async () => {
@@ -25,6 +26,7 @@ export default function BottleSizesPage() {
   const [status, setStatus] = useState<StatusFilter>("all");
   const [editing, setEditing] = useState<BottleSize | null>(null);
   const [formOpen, setFormOpen] = useState(false);
+  const [toDelete, setToDelete] = useState<BottleSize | null>(null);
 
   const stockOf = (s: BottleSize) => data.data?.stock.find(x => x.item_id === s.inventory_item_id);
   const rulesOf = (s: BottleSize) => data.data?.rules.filter(r => r.bottle_size_id === s.id).length ?? 0;
@@ -59,6 +61,9 @@ export default function BottleSizesPage() {
         <button onClick={() => toggle(s)} className={`text-xs hover:underline ${s.active ? "text-danger" : "text-success"}`}>
           {s.active ? "إيقاف" : "تفعيل"}
         </button>
+        <button onClick={() => setToDelete(s)} className="text-xs text-danger hover:underline inline-flex items-center gap-1">
+          <Trash2 className="w-3 h-3" />حذف
+        </button>
       </div>) }] : []),
   ];
 
@@ -77,6 +82,15 @@ export default function BottleSizesPage() {
             rowClassName={s => (s.active ? undefined : "opacity-60")} />
         </AsyncBoundary>
       </PageBody>
+      <ConfirmDialog open={!!toDelete} onClose={() => setToDelete(null)} title="حذف حجم الزجاجة" confirmLabel="حذف"
+        message={toDelete ? `حذف الحجم "${toDelete.name}" مع قواعد الاستهلاك والأسعار الخاصة به وصنف الزجاجات الفارغة؟ لا يمكن الحذف إذا سُجلت عليه مبيعات أو حركات مخزون، وفي هذه الحالة استخدم الإيقاف.` : ""}
+        onConfirm={async () => {
+          if (!toDelete) return;
+          await deleteBottleSize(toDelete.id);
+          notify.success(`تم حذف ${toDelete.name}`);
+          setToDelete(null);
+          await data.reload();
+        }} />
       {formOpen && (
         <SizeForm size={editing} onClose={() => setFormOpen(false)}
           onSaved={async () => { setFormOpen(false); notify.success("تم حفظ الحجم"); await data.reload(); }} />

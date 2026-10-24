@@ -13,6 +13,8 @@ import { supabase } from "@/core/lib/supabase";
 import { errorMessage, unwrap } from "@/core/lib/errors";
 import { fmtDateTime } from "@/core/lib/format";
 import { ROLE_LABEL, roleLabel } from "@/app/permissions";
+import { listCategories } from "@/modules/catalog/api";
+import { cn } from "@/core/lib/cn";
 
 type Tab = "general" | "users" | "audit";
 
@@ -150,11 +152,22 @@ function UserForm({ user, isSelf, onClose, onSaved }: { user: AppUser; isSelf: b
   const [active, setActive] = useState(user.active);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const categories = useAsync(listCategories, []);
+  const grants = useAsync(async () => unwrap(await supabase.from("user_category_access").select("category_id").eq("user_id", user.id)) as { category_id: number }[], [user.id]);
+  // null until the admin touches the list; then the admin's selection wins
+  const [picked, setPicked] = useState<number[] | null>(null);
+  const selected = picked ?? (grants.data ?? []).map(g => g.category_id);
+  const ready = !!categories.data && !!grants.data;
+  const toggleCategory = (id: number) => setPicked(prev => {
+    const base = prev ?? selected;
+    return base.includes(id) ? base.filter(x => x !== id) : [...base, id];
+  });
 
   const save = async () => {
     setBusy(true); setError("");
     try {
       unwrap(await supabase.from("app_users").update({ full_name: fullName.trim() || null, role, active }).eq("id", user.id).select("id").single());
+      unwrap(await supabase.rpc("set_user_category_access", { p_user_id: user.id, p_category_ids: role === "seller" ? selected : [] }));
       onSaved();
     } catch (e) { setError(errorMessage(e)); setBusy(false); }
   };
@@ -175,8 +188,27 @@ function UserForm({ user, isSelf, onClose, onSaved }: { user: AppUser; isSelf: b
             <option value="1">مفعّل</option><option value="0">موقوف</option>
           </select>
         </Field>
+        {role === "seller" && (
+          <div>
+            <p className="eg-label">التصنيفات المسموح له بالبيع فيها</p>
+            {!ready ? <p className="text-xs text-subtext">جاري التحميل...</p> : (
+              <div className="flex flex-wrap gap-2">
+                {(categories.data ?? []).map(c => (
+                  <button key={c.id} type="button" onClick={() => toggleCategory(c.id)}
+                    className={cn("px-3 py-1.5 rounded-lg border text-xs transition-colors",
+                      selected.includes(c.id) ? "border-accent bg-accent/15 text-text font-semibold" : "border-border bg-card2 text-subtext hover:text-text")}>
+                    {c.name}
+                  </button>
+                ))}
+              </div>
+            )}
+            <p className="text-[11px] text-subtext mt-1.5 leading-relaxed">
+              البائع يرى ويبيع في التصنيفات المختارة فقط، ويرى فواتير اليوم التي تحتوي عليها فقط. بدون اختيار لا يرى أي شيء.
+            </p>
+          </div>
+        )}
         <FormError message={error} />
-        <button onClick={save} disabled={busy} className="eg-btn-primary w-full justify-center">{busy ? "جاري الحفظ..." : "حفظ"}</button>
+        <button onClick={save} disabled={busy || !ready} className="eg-btn-primary w-full justify-center">{busy ? "جاري الحفظ..." : "حفظ"}</button>
       </div>
     </Modal>
   );

@@ -68,9 +68,16 @@ export async function saveBottleSize(input: Pick<BottleSize, "name" | "volume_ml
   unwrap(await q.select("id").single());
 }
 
+export async function deleteBottleSize(id: number) {
+  unwrap(await supabase.from("bottle_sizes").delete().eq("id", id).select("id").single());
+}
+
 // ─── Oil types ───
 export async function listOilTypes(): Promise<OilType[]> {
   return unwrap(await supabase.from("oil_types").select("*").order("sort_order").order("name")) as OilType[];
+}
+export async function deleteOilType(id: number) {
+  unwrap(await supabase.from("oil_types").delete().eq("id", id).select("id").single());
 }
 export async function saveOilType(input: Pick<OilType, "name" | "description" | "sort_order" | "active">, id?: number) {
   const q = id ? supabase.from("oil_types").update(input).eq("id", id) : supabase.from("oil_types").insert(input);

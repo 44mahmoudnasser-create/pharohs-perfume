@@ -1,9 +1,10 @@
 import { useMemo, useState } from "react";
-import { ImageOff, Pencil, Plus } from "lucide-react";
+import { ImageOff, Pencil, Plus, Trash2 } from "lucide-react";
 import PageHeader, { PageBody } from "@/core/ui/PageHeader";
 import DataTable, { type Column } from "@/core/ui/DataTable";
 import { AsyncBoundary } from "@/core/ui/States";
 import { ActiveBadge, Badge } from "@/core/ui/Badges";
+import ConfirmDialog from "@/core/ui/ConfirmDialog";
 import { FilterSelect, SearchInput, Segmented, matchesStatus, statusOptions, type StatusFilter } from "@/core/ui/Form";
 import { useAsync } from "@/core/hooks/useAsync";
 import { useNotify } from "@/core/ui/Notifications";
@@ -11,7 +12,7 @@ import { useAuth } from "@/core/auth/AuthProvider";
 import { useShop } from "@/core/settings/SettingsProvider";
 import { fmtInt, fmtMoney } from "@/core/lib/format";
 import { useSaleModes } from "@/modules/sales/saleModes";
-import { listCategories, listProducts, setProductActive, type Product } from "./api";
+import { deleteProduct, listCategories, listProducts, setProductActive, type Product } from "./api";
 import ProductFormModal from "./ProductFormModal";
 
 export default function ProductsPage() {
@@ -29,6 +30,7 @@ export default function ProductsPage() {
   const [status, setStatus] = useState<StatusFilter>("all");
   const [editing, setEditing] = useState<Product | null>(null);
   const [formOpen, setFormOpen] = useState(false);
+  const [toDelete, setToDelete] = useState<Product | null>(null);
 
   const rows = useMemo(() => (products.data ?? []).filter(p =>
     matchesStatus(p.active, status) &&
@@ -63,13 +65,16 @@ export default function ProductsPage() {
         ? <span className="tabular-nums">{fmtMoney(p.unit_price, currency)}</span>
         : <span className="text-[11px] text-subtext">حسب الاختيار وقت البيع</span> },
     { key: "status", header: "الحالة", sortValue: p => (p.active ? 0 : 1), render: p => <ActiveBadge active={p.active} /> },
-    ...(canManage ? [{ key: "actions", header: "", className: "w-32", render: (p: Product) => (
+    ...(canManage ? [{ key: "actions", header: "", className: "w-44", render: (p: Product) => (
       <div className="flex items-center gap-3 justify-end">
         <button onClick={() => { setEditing(p); setFormOpen(true); }} className="text-xs text-accent hover:underline inline-flex items-center gap-1">
           <Pencil className="w-3 h-3" />تعديل
         </button>
         <button onClick={() => toggle(p)} className={`text-xs hover:underline ${p.active ? "text-danger" : "text-success"}`}>
           {p.active ? "إيقاف" : "تفعيل"}
+        </button>
+        <button onClick={() => setToDelete(p)} className="text-xs text-danger hover:underline inline-flex items-center gap-1">
+          <Trash2 className="w-3 h-3" />حذف
         </button>
       </div>) }] : []),
   ];
@@ -101,6 +106,15 @@ export default function ProductsPage() {
           onClose={() => setFormOpen(false)}
           onSaved={async () => { await products.reload(); }} />
       )}
+      <ConfirmDialog open={!!toDelete} onClose={() => setToDelete(null)} title="حذف المنتج" confirmLabel="حذف"
+        message={toDelete ? `حذف "${toDelete.name}" نهائياً؟ لا يمكن الحذف إذا سُجل عليه بيع، وفي هذه الحالة استخدم الإيقاف.` : ""}
+        onConfirm={async () => {
+          if (!toDelete) return;
+          await deleteProduct(toDelete.id);
+          notify.success(`تم حذف ${toDelete.name}`);
+          setToDelete(null);
+          await products.reload();
+        }} />
     </>
   );
 }

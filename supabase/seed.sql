@@ -15,11 +15,11 @@ declare
   v_oud       bigint;
 begin
   -- ─── Categories ───
-  insert into public.categories (name, description, sort_order)
-  values ('تركيبات', 'عطور يتم تركيبها عند البيع حسب الحجم ونوع الزيت', 1)
+  insert into public.categories (name, description, sort_order, sale_mode)
+  values ('تركيبات', 'عطور يتم تركيبها عند البيع حسب الحجم ونوع الزيت', 1, 'perfume_formulation')
   returning id into v_perfumes;
-  insert into public.categories (name, description, sort_order)
-  values ('إكسسوارات', 'منتجات جاهزة تُباع بالقطعة', 2)
+  insert into public.categories (name, description, sort_order, sale_mode)
+  values ('إكسسوارات', 'منتجات جاهزة تُباع بالقطعة', 2, 'stock_item')
   returning id into v_acc;
 
   -- ─── Bottle sizes (each auto-creates its empty-bottle inventory item) ───

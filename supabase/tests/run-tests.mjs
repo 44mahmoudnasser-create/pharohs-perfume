@@ -75,6 +75,8 @@ const USERS = {
   seller:   { id: randomUUID(), email: 'seller@example.test',   role: 'seller',  active: true },
   seller2:  { id: randomUUID(), email: 'seller2@example.test',  role: 'seller',  active: true },
   inactive: { id: randomUUID(), email: 'inactive@example.test', role: 'seller',  active: false },
+  restricted: { id: randomUUID(), email: 'restricted@example.test', role: 'seller', active: true },
+  nogrant:    { id: randomUUID(), email: 'nogrant@example.test',    role: 'seller', active: true },
 };
 
 // Run fn inside a transaction as the given app user (or anon). Commits unless rollback=true.
@@ -136,6 +138,15 @@ async function main() {
   const s100 = await size(100), s500 = await size(500), s200 = await size(200), s30 = await size(30);
   const french = await oil('فرنسي'), economy = await oil('اقتصادي'), conc = await oil('مركز');
   const blue = await product('PF-BLUE'), oud = await product('PF-OUD'), musk = await product('PF-MUSK'), gift = await product('ACC-GIFT');
+
+  // sellers sell only in categories an admin granted (migration 0800)
+  const grantCategories = [['seller', ['تركيبات', 'إكسسوارات']], ['seller2', ['تركيبات', 'إكسسوارات']], ['restricted', ['تركيبات']]];
+  for (const [who, cats] of grantCategories) {
+    for (const cat of cats) {
+      await c.query(`insert into public.user_category_access (user_id, category_id)
+                     select $1, id from public.categories where name = $2`, [USERS[who].id, cat]);
+    }
+  }
 
   const sell = (q, lines, key = randomUUID()) =>
     q(`select public.sales_create_sale($1, $2::jsonb) as r`, [key, JSON.stringify(lines)]).then(r => r.rows[0].r);
@@ -292,11 +303,11 @@ async function main() {
     await as(c, 'seller', q => sell(q, [perfumeLine(blue, s100, french)]));
     eq(Number(await bal(french.inventory_item_id)), before - 35, 'new rule applied to new sale');
   });
-  await test('seller sees only own sales; manager sees all', async () => {
+  await test('a seller with both grants sees all of today\'s invoices; manager sees at least as many', async () => {
     const mine = (await as(c, 'seller', q => q(`select count(*)::int n from public.sales`))).rows[0].n;
+    const todays = await val(`select count(*)::int from public.sales where public.shop_date(created_at) = public.shop_date(now())`);
     const all = (await as(c, 'manager', q => q(`select count(*)::int n from public.sales`))).rows[0].n;
-    const sellerOwn = await val(`select count(*)::int from public.sales where created_by = $1`, [USERS.seller.id]);
-    eq(mine, sellerOwn, 'seller visible'); assert(all > mine, 'manager sees more');
+    eq(mine, todays, 'today\'s invoices'); assert(all >= mine, 'manager sees at least as many');
   });
 
   console.log('\n▸ Cancellation');
@@ -396,6 +407,96 @@ async function main() {
                                  values ($1, $2, 5)`, [french.id, s100.id])), '23505', 'duplicate combo rejected');
   });
 
+  console.log('\n▸ Access by category and day');
+  await test('a seller without grants sees no categories, products or sales', async () => {
+    const count = async (sql) => (await as(c, 'nogrant', q => q(sql))).rows[0].n;
+    eq(await count(`select count(*)::int n from public.categories`), 0, 'categories');
+    eq(await count(`select count(*)::int n from public.products`), 0, 'products');
+    eq(await count(`select count(*)::int n from public.sales`), 0, 'sales');
+  });
+  await test('a restricted seller sees only granted categories and their products', async () => {
+    const cats = (await as(c, 'restricted', q => q(`select name from public.categories order by name`))).rows.map(r => r.name);
+    eq(cats.join(','), 'تركيبات', 'categories');
+    const other = (await as(c, 'restricted', q => q(`select count(*)::int n from public.products p
+      join public.categories cat on cat.id = p.category_id where cat.name = 'إكسسوارات'`))).rows[0].n;
+    eq(other, 0, 'products outside the grant');
+  });
+  await test('a restricted seller cannot sell outside granted categories', async () => {
+    await rejects(as(c, 'restricted', q => sell(q, [{ product_id: gift.id, quantity: 1 }])), 'CATEGORY_FORBIDDEN', 'gift');
+  });
+  await test('a restricted seller sees only the granted lines of a mixed invoice', async () => {
+    const r = await as(c, 'admin', q => sell(q, [perfumeLine(blue, s100, french), { product_id: gift.id, quantity: 1 }]));
+    const lines = (await as(c, 'restricted', q => q(`select product_name from public.sale_lines where sale_id = $1`, [r.sale_id]))).rows;
+    eq(lines.map(l => l.product_name).join(','), 'عطر بلو', 'visible lines');
+    eq((await as(c, 'restricted', q => q(`select count(*)::int n from public.sales where id = $1`, [r.sale_id]))).rows[0].n, 1, 'invoice visible');
+    const comps = (await as(c, 'restricted', q => q(`select count(*)::int n from public.sale_line_components sc
+      join public.sale_lines l on l.id = sc.sale_line_id where l.sale_id = $1`, [r.sale_id]))).rows[0].n;
+    eq(comps, 2, 'components of the granted line only');
+  });
+  await test('a seller cannot see invoices from previous days', async () => {
+    const r = await as(c, 'admin', q => sell(q, [perfumeLine(blue, s30, economy)]));
+    await c.query(`alter table public.sales disable trigger sales_header_guard`);
+    try {
+      await c.query(`update public.sales set created_at = now() - interval '2 days' where id = $1`, [r.sale_id]);
+    } finally {
+      await c.query(`alter table public.sales enable trigger sales_header_guard`);
+    }
+    eq((await as(c, 'restricted', q => q(`select count(*)::int n from public.sales where id = $1`, [r.sale_id]))).rows[0].n, 0, 'seller');
+    eq((await as(c, 'admin', q => q(`select count(*)::int n from public.sales where id = $1`, [r.sale_id]))).rows[0].n, 1, 'admin');
+  });
+  await test('a product takes its sale mode from its category', async () => {
+    await as(c, 'admin', async q => {
+      const cat = (await q(`select id from public.categories where name = 'تركيبات'`)).rows[0];
+      const p = (await q(`insert into public.products (category_id, name, sale_mode, inventory_item_id, unit_price)
+                          values ($1, 'منتج اختبار', 'stock_item', $2, 10) returning sale_mode, inventory_item_id, unit_price`,
+                         [cat.id, gift.inventory_item_id])).rows[0];
+      eq(p.sale_mode, 'perfume_formulation', 'mode from category');
+      assert(p.inventory_item_id == null && p.unit_price == null, 'stock fields cleared');
+    }, { rollback: true });
+  });
+  await test('a category\'s sale mode is locked once it has products', async () => {
+    await rejects(as(c, 'admin', q => q(`update public.categories set sale_mode = 'stock_item' where name = 'تركيبات'`), { rollback: true }),
+      'CATEGORY_HAS_PRODUCTS', 'mode change');
+  });
+  await test('a new oil is enabled automatically on products that restrict oils', async () => {
+    await as(c, 'admin', async q => {
+      await q(`select public.perfume_set_product_restrictions($1, $2, $3)`, [oud.id, [], [french.id]]);
+      const oil = (await q(`insert into public.oil_types (name) values ('اختبار تلقائي') returning id`)).rows[0];
+      eq((await q(`select count(*)::int n from public.perfume_product_oil_types where product_id = $1 and oil_type_id = $2`,
+        [oud.id, oil.id])).rows[0].n, 1, 'new oil enabled for the restricted product');
+    }, { rollback: true });
+  });
+
+  console.log('\n▸ Deletion');
+  await test('unsold catalog and configuration rows can be deleted', async () => {
+    await as(c, 'admin', async q => {
+      const cat = (await q(`insert into public.categories (name) values ('تصنيف مؤقت') returning id`)).rows[0];
+      await q(`delete from public.categories where id = $1`, [cat.id]);
+      const size = (await q(`insert into public.bottle_sizes (name, volume_ml) values ('حجم مؤقت', 999) returning id, inventory_item_id`)).rows[0];
+      await q(`insert into public.oil_consumption_rules (oil_type_id, bottle_size_id, grams_per_bottle) values ($1, $2, 10)`, [french.id, size.id]);
+      await q(`insert into public.perfume_prices (bottle_size_id, oil_type_id, price) values ($1, $2, 99)`, [size.id, french.id]);
+      await q(`delete from public.bottle_sizes where id = $1`, [size.id]);
+      eq((await q(`select count(*)::int n from public.inventory_items where id = $1`, [size.inventory_item_id])).rows[0].n, 0, 'stock item removed');
+      eq((await q(`select count(*)::int n from public.oil_consumption_rules where bottle_size_id = $1`, [size.id])).rows[0].n, 0, 'rules removed');
+      const oil = (await q(`insert into public.oil_types (name) values ('زيت مؤقت') returning id, inventory_item_id`)).rows[0];
+      await q(`delete from public.oil_types where id = $1`, [oil.id]);
+      eq((await q(`select count(*)::int n from public.inventory_items where id = $1`, [oil.inventory_item_id])).rows[0].n, 0, 'oil stock item removed');
+      const p = (await q(`insert into public.products (category_id, name, sale_mode)
+                          select id, 'منتج مؤقت', 'perfume_formulation' from public.categories where name = 'تركيبات' returning id`)).rows[0];
+      await q(`delete from public.products where id = $1`, [p.id]);
+    }, { rollback: true });
+  });
+  await test('sold or stock-moved items cannot be deleted', async () => {
+    await rejects(as(c, 'admin', q => q(`delete from public.products where id = $1`, [blue.id]), { rollback: true }), '23503', 'sold product');
+    await rejects(as(c, 'admin', q => q(`delete from public.bottle_sizes where id = $1`, [s100.id]), { rollback: true }), '23503', 'sold size');
+    await rejects(as(c, 'admin', q => q(`delete from public.oil_types where id = $1`, [economy.id]), { rollback: true }), '23503', 'oil with stock history');
+    await rejects(as(c, 'admin', q => q(`delete from public.categories where id = $1`, [blue.category_id]), { rollback: true }), '23503', 'category with products');
+  });
+  await test('sellers cannot delete anything', async () => {
+    const r = await as(c, 'seller', q => q(`delete from public.products where id = $1`, [musk.id]), { rollback: true });
+    eq(r.rowCount, 0, 'rows deleted by seller');
+  });
+
   console.log('\n▸ Reports');
   await test('reports are consistent with recorded sales and ledger', async () => {
     const from = '2000-01-01', to = '2100-01-01';
@@ -418,10 +519,13 @@ async function main() {
     const gramsFromLines = Number(byOil.find(r => r.label === 'فرنسي').oil_grams);
     eq(Number(frenchCons.net_consumed), gramsFromLines, 'ledger grams = sale line grams');
   });
-  await test('dashboard summary works for a seller', async () => {
-    const r = (await as(c, 'seller', q => q(`select public.dashboard_summary() s`))).rows[0].s;
-    assert(r.sales_today >= 1, 'sales today');
-    eq(r.missing_rules, await val(`select count(*) from public.v_perfume_config_matrix where missing_rule`), 'missing rules');
+  await test('dashboard: a seller sees only their visible figures and no shop-wide alerts', async () => {
+    const seller = (await as(c, 'restricted', q => q(`select public.dashboard_summary() s`))).rows[0].s;
+    const admin = (await as(c, 'admin', q => q(`select public.dashboard_summary() s`))).rows[0].s;
+    eq(seller.missing_rules, 0, 'config alerts hidden from seller');
+    eq(seller.low_stock_items, 0, 'stock alerts hidden from seller');
+    assert(Number(seller.revenue_today) < Number(admin.revenue_today), 'seller revenue is a subset of the shop\'s');
+    eq(admin.missing_rules, await val(`select count(*) from public.v_perfume_config_matrix where missing_rule`), 'admin sees missing rules');
   });
 
   await c.end();

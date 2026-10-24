@@ -78,6 +78,10 @@ export async function saveItem(input: Partial<ItemInput>, id?: number) {
   unwrap(await q.select("id").single());
 }
 
+export async function deleteItem(id: number) {
+  unwrap(await supabase.from("inventory_items").delete().eq("id", id).select("id").single());
+}
+
 export async function receiveStock(itemId: number, quantity: number, note: string) {
   unwrap(await supabase.rpc("inventory_receive", { p_item_id: itemId, p_quantity: quantity, p_note: note || null }));
 }

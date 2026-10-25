@@ -89,7 +89,7 @@ Key business rules enforced in the database:
 
 | Permission | admin | manager | seller |
 |---|:-:|:-:|:-:|
-| Sell | ✔ | ✔ | ✔ (every active category) |
+| Sell | ✔ | ✔ | ✔ (granted categories only) |
 | See all sales / cancel sales | ✔ | ✔ | – (own invoices from today, granted lines only) |
 | Manage categories & products | ✔ | ✔ | – |
 | Stock receipts, adjustments, stocktake, movement history | ✔ | ✔ | – (page hidden) |
@@ -99,9 +99,9 @@ Key business rules enforced in the database:
 | Reports | ✔ | ✔ | – |
 | Settings & users, seller category grants | ✔ | – | – |
 
-**Seller category grants.** Sellers can sell in every active category. Settings → users → choose a seller → tick
-the categories whose lines they may see in their own invoices. A seller sees only their own invoices from today,
-and inside each one only the lines from ticked categories. With nothing ticked, they sell but see no invoices.
+**Seller category grants.** Settings → users → choose a seller → tick the categories they may sell in and see.
+A seller sells only in ticked categories, sees only those categories and products, and sees only their own
+invoices from today, with only the lines from ticked categories. With nothing ticked, they can't sell at all.
 
 **Deleting.** Anything added can be deleted, as long as nothing was sold from it and it has no stock movements
 (sizes and oils also need their stock item to have no movements). Otherwise the app asks you to deactivate it instead.

@@ -409,27 +409,29 @@ async function main() {
   });
 
   console.log('\n▸ Access by category and day');
-  await test('a seller without grants can sell everywhere but sees none of their invoices', async () => {
-    const r = await as(c, 'nogrant', q => sell(q, [{ product_id: gift.id, quantity: 1 }]));
-    eq(r.total, 50, 'sold in an accessory category');
-    eq((await as(c, 'nogrant', q => q(`select count(*)::int n from public.sales`))).rows[0].n, 0, 'own invoices visible');
-    eq((await as(c, 'nogrant', q => q(`select count(*)::int n from public.categories`))).rows[0].n,
-      await val(`select count(*)::int from public.categories where active`), 'all active categories visible for selling');
+  await test('a seller without grants cannot sell and sees no categories or products', async () => {
+    await rejects(as(c, 'nogrant', q => sell(q, [{ product_id: gift.id, quantity: 1 }])), 'CATEGORY_FORBIDDEN', 'gift');
+    eq((await as(c, 'nogrant', q => q(`select count(*)::int n from public.categories`))).rows[0].n, 0, 'categories');
+    eq((await as(c, 'nogrant', q => q(`select count(*)::int n from public.products`))).rows[0].n, 0, 'products');
   });
-  await test('a restricted seller can sell in any active category', async () => {
-    const r = await as(c, 'restricted', q => sell(q, [{ product_id: gift.id, quantity: 1 }]));
-    eq(r.total, 50, 'accessory sold by a perfume-only viewer');
+  await test('a restricted seller cannot sell outside granted categories', async () => {
+    await rejects(as(c, 'restricted', q => sell(q, [{ product_id: gift.id, quantity: 1 }])), 'CATEGORY_FORBIDDEN', 'gift');
   });
-  await test('a seller sees only the granted lines of their own mixed invoice', async () => {
-    const r = await as(c, 'restricted', q => sell(q, [perfumeLine(blue, s100, french), { product_id: gift.id, quantity: 1 }]));
-    const lines = (await as(c, 'restricted', q => q(`select product_name from public.sale_lines where sale_id = $1`, [r.sale_id]))).rows;
-    eq(lines.map(l => l.product_name).join(','), 'عطر بلو', 'visible lines');
-    eq((await as(c, 'restricted', q => q(`select count(*)::int n from public.sales where id = $1`, [r.sale_id]))).rows[0].n, 1, 'invoice visible');
-    const comps = (await as(c, 'restricted', q => q(`select count(*)::int n from public.sale_line_components sc
-      join public.sale_lines l on l.id = sc.sale_line_id where l.sale_id = $1`, [r.sale_id]))).rows[0].n;
-    eq(comps, 2, 'components of the granted line only');
-    eq((await as(c, 'manager', q => q(`select count(*)::int n from public.sale_lines where sale_id = $1`, [r.sale_id]))).rows[0].n,
-      2, 'manager sees every line');
+  await test('a seller sees only the lines of granted categories in their own invoice', async () => {
+    const r = await as(c, 'seller', q => sell(q, [perfumeLine(blue, s100, french), { product_id: gift.id, quantity: 1 }]));
+    // the accessory grant is removed afterwards: the gift line disappears from the seller's view
+    await c.query(`delete from public.user_category_access where user_id = $1
+                   and category_id = (select id from public.categories where name = 'إكسسوارات')`, [USERS.seller.id]);
+    try {
+      const lines = (await as(c, 'seller', q => q(`select product_name from public.sale_lines where sale_id = $1`, [r.sale_id]))).rows;
+      eq(lines.map(l => l.product_name).join(','), 'عطر بلو', 'visible lines');
+      eq((await as(c, 'seller', q => q(`select count(*)::int n from public.sales where id = $1`, [r.sale_id]))).rows[0].n, 1, 'invoice visible');
+      eq((await as(c, 'manager', q => q(`select count(*)::int n from public.sale_lines where sale_id = $1`, [r.sale_id]))).rows[0].n,
+        2, 'manager sees every line');
+    } finally {
+      await c.query(`insert into public.user_category_access (user_id, category_id)
+                     select $1, id from public.categories where name = 'إكسسوارات'`, [USERS.seller.id]);
+    }
   });
   await test('a seller cannot see other sellers\' invoices', async () => {
     const r = await as(c, 'admin', q => sell(q, [perfumeLine(blue, s30, economy)]));

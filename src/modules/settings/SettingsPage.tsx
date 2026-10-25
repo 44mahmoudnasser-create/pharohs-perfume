@@ -190,7 +190,7 @@ function UserForm({ user, isSelf, onClose, onSaved }: { user: AppUser; isSelf: b
         </Field>
         {role === "seller" && (
           <div>
-            <p className="eg-label">التصنيفات اللي يشوف فيها فواتيره</p>
+            <p className="eg-label">التصنيفات اللي يبيع فيها ويشوف فواتيره</p>
             {!ready ? <p className="text-xs text-subtext">جاري التحميل...</p> : (
               <div className="flex flex-wrap gap-2">
                 {(categories.data ?? []).map(c => (
@@ -203,7 +203,7 @@ function UserForm({ user, isSelf, onClose, onSaved }: { user: AppUser; isSelf: b
               </div>
             )}
             <p className="text-[11px] text-subtext mt-1.5 leading-relaxed">
-              البائع يبيع في كل التصنيفات. يرى فواتيره من اليوم فقط، وداخل كل فاتورة البنود التي من التصنيفات المختارة فقط. بدون اختيار لا يرى أي فاتورة.
+              البائع يبيع ويرى فواتيره من اليوم فقط، وفي التصنيفات المختارة فقط. بدون اختيار لا يبيع ولا يرى أي شيء.
             </p>
           </div>
         )}

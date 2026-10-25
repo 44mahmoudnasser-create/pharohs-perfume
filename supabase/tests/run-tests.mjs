@@ -139,7 +139,7 @@ async function main() {
   const french = await oil('فرنسي'), economy = await oil('اقتصادي'), conc = await oil('مركز');
   const blue = await product('PF-BLUE'), oud = await product('PF-OUD'), musk = await product('PF-MUSK'), gift = await product('ACC-GIFT');
 
-  // sellers sell only in categories an admin granted (migration 0800)
+  // category grants decide which lines a seller sees in their own invoices (migrations 0800, 0900)
   const grantCategories = [['seller', ['تركيبات', 'إكسسوارات']], ['seller2', ['تركيبات', 'إكسسوارات']], ['restricted', ['تركيبات']]];
   for (const [who, cats] of grantCategories) {
     for (const cat of cats) {
@@ -303,11 +303,12 @@ async function main() {
     await as(c, 'seller', q => sell(q, [perfumeLine(blue, s100, french)]));
     eq(Number(await bal(french.inventory_item_id)), before - 35, 'new rule applied to new sale');
   });
-  await test('a seller with both grants sees all of today\'s invoices; manager sees at least as many', async () => {
+  await test('a seller sees their own invoices from today; manager sees at least as many', async () => {
     const mine = (await as(c, 'seller', q => q(`select count(*)::int n from public.sales`))).rows[0].n;
-    const todays = await val(`select count(*)::int from public.sales where public.shop_date(created_at) = public.shop_date(now())`);
+    const ownToday = await val(`select count(*)::int from public.sales
+      where created_by = $1 and public.shop_date(created_at) = public.shop_date(now())`, [USERS.seller.id]);
     const all = (await as(c, 'manager', q => q(`select count(*)::int n from public.sales`))).rows[0].n;
-    eq(mine, todays, 'today\'s invoices'); assert(all >= mine, 'manager sees at least as many');
+    eq(mine, ownToday, 'own invoices from today'); assert(all >= mine, 'manager sees at least as many');
   });
 
   console.log('\n▸ Cancellation');
@@ -408,33 +409,34 @@ async function main() {
   });
 
   console.log('\n▸ Access by category and day');
-  await test('a seller without grants sees no categories, products or sales', async () => {
-    const count = async (sql) => (await as(c, 'nogrant', q => q(sql))).rows[0].n;
-    eq(await count(`select count(*)::int n from public.categories`), 0, 'categories');
-    eq(await count(`select count(*)::int n from public.products`), 0, 'products');
-    eq(await count(`select count(*)::int n from public.sales`), 0, 'sales');
+  await test('a seller without grants can sell everywhere but sees none of their invoices', async () => {
+    const r = await as(c, 'nogrant', q => sell(q, [{ product_id: gift.id, quantity: 1 }]));
+    eq(r.total, 50, 'sold in an accessory category');
+    eq((await as(c, 'nogrant', q => q(`select count(*)::int n from public.sales`))).rows[0].n, 0, 'own invoices visible');
+    eq((await as(c, 'nogrant', q => q(`select count(*)::int n from public.categories`))).rows[0].n,
+      await val(`select count(*)::int from public.categories where active`), 'all active categories visible for selling');
   });
-  await test('a restricted seller sees only granted categories and their products', async () => {
-    const cats = (await as(c, 'restricted', q => q(`select name from public.categories order by name`))).rows.map(r => r.name);
-    eq(cats.join(','), 'تركيبات', 'categories');
-    const other = (await as(c, 'restricted', q => q(`select count(*)::int n from public.products p
-      join public.categories cat on cat.id = p.category_id where cat.name = 'إكسسوارات'`))).rows[0].n;
-    eq(other, 0, 'products outside the grant');
+  await test('a restricted seller can sell in any active category', async () => {
+    const r = await as(c, 'restricted', q => sell(q, [{ product_id: gift.id, quantity: 1 }]));
+    eq(r.total, 50, 'accessory sold by a perfume-only viewer');
   });
-  await test('a restricted seller cannot sell outside granted categories', async () => {
-    await rejects(as(c, 'restricted', q => sell(q, [{ product_id: gift.id, quantity: 1 }])), 'CATEGORY_FORBIDDEN', 'gift');
-  });
-  await test('a restricted seller sees only the granted lines of a mixed invoice', async () => {
-    const r = await as(c, 'admin', q => sell(q, [perfumeLine(blue, s100, french), { product_id: gift.id, quantity: 1 }]));
+  await test('a seller sees only the granted lines of their own mixed invoice', async () => {
+    const r = await as(c, 'restricted', q => sell(q, [perfumeLine(blue, s100, french), { product_id: gift.id, quantity: 1 }]));
     const lines = (await as(c, 'restricted', q => q(`select product_name from public.sale_lines where sale_id = $1`, [r.sale_id]))).rows;
     eq(lines.map(l => l.product_name).join(','), 'عطر بلو', 'visible lines');
     eq((await as(c, 'restricted', q => q(`select count(*)::int n from public.sales where id = $1`, [r.sale_id]))).rows[0].n, 1, 'invoice visible');
     const comps = (await as(c, 'restricted', q => q(`select count(*)::int n from public.sale_line_components sc
       join public.sale_lines l on l.id = sc.sale_line_id where l.sale_id = $1`, [r.sale_id]))).rows[0].n;
     eq(comps, 2, 'components of the granted line only');
+    eq((await as(c, 'manager', q => q(`select count(*)::int n from public.sale_lines where sale_id = $1`, [r.sale_id]))).rows[0].n,
+      2, 'manager sees every line');
+  });
+  await test('a seller cannot see other sellers\' invoices', async () => {
+    const r = await as(c, 'admin', q => sell(q, [perfumeLine(blue, s30, economy)]));
+    eq((await as(c, 'restricted', q => q(`select count(*)::int n from public.sales where id = $1`, [r.sale_id]))).rows[0].n, 0, 'other seller\'s invoice');
   });
   await test('a seller cannot see invoices from previous days', async () => {
-    const r = await as(c, 'admin', q => sell(q, [perfumeLine(blue, s30, economy)]));
+    const r = await as(c, 'restricted', q => sell(q, [perfumeLine(blue, s30, economy)]));
     await c.query(`alter table public.sales disable trigger sales_header_guard`);
     try {
       await c.query(`update public.sales set created_at = now() - interval '2 days' where id = $1`, [r.sale_id]);

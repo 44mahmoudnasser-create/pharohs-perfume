@@ -6,21 +6,23 @@ import { PendingActivation, RequirePermission } from "@/core/auth/Guards";
 import AppShell from "@/core/layout/AppShell";
 import { NotificationsProvider } from "@/core/ui/Notifications";
 import { SettingsProvider, useShop } from "@/core/settings/SettingsProvider";
-import { LoadingState } from "@/core/ui/States";
+import { ErrorState, LoadingState } from "@/core/ui/States";
+import { lazy } from "react";
 import { isSupabaseConfigured } from "@/core/lib/supabase";
 import { SaleModesProvider } from "@/modules/sales/saleModes";
 import { stockItemSaleMode } from "@/modules/sales/StockItemLineEditor";
-import DashboardPage from "@/modules/dashboard/DashboardPage";
-import CategoriesPage from "@/modules/catalog/CategoriesPage";
-import ProductsPage from "@/modules/catalog/ProductsPage";
-import InventoryPage from "@/modules/inventory/InventoryPage";
-import SalesPage from "@/modules/sales/SalesPage";
-import NewSalePage from "@/modules/sales/NewSalePage";
-import ReportsPage from "@/modules/reports/ReportsPage";
-import SettingsPage from "@/modules/settings/SettingsPage";
-import BottleSizesPage from "@/perfume/BottleSizesPage";
-import OilTypesPage from "@/perfume/OilTypesPage";
-import ConsumptionRulesPage from "@/perfume/ConsumptionRulesPage";
+// Pages load on demand so the first screen doesn't download every module.
+const DashboardPage = lazy(() => import("@/modules/dashboard/DashboardPage"));
+const CategoriesPage = lazy(() => import("@/modules/catalog/CategoriesPage"));
+const ProductsPage = lazy(() => import("@/modules/catalog/ProductsPage"));
+const InventoryPage = lazy(() => import("@/modules/inventory/InventoryPage"));
+const SalesPage = lazy(() => import("@/modules/sales/SalesPage"));
+const NewSalePage = lazy(() => import("@/modules/sales/NewSalePage"));
+const ReportsPage = lazy(() => import("@/modules/reports/ReportsPage"));
+const SettingsPage = lazy(() => import("@/modules/settings/SettingsPage"));
+const BottleSizesPage = lazy(() => import("@/perfume/BottleSizesPage"));
+const OilTypesPage = lazy(() => import("@/perfume/OilTypesPage"));
+const ConsumptionRulesPage = lazy(() => import("@/perfume/ConsumptionRulesPage"));
 import { perfumeSaleMode } from "@/perfume";
 import { PERMISSIONS, roleLabel } from "@/app/permissions";
 import { NAV } from "@/app/nav";
@@ -43,9 +45,18 @@ export default function App() {
 }
 
 function Gate() {
-  const { session, profile, loading } = useAuth();
+  const { session, profile, profileError, loading, refreshProfile } = useAuth();
   if (loading) return <div className="min-h-screen flex items-center justify-center"><LoadingState /></div>;
   if (!session) return <LoginPage appName="عطور الفراعنة" appSubtitle={APP_SUBTITLE} />;
+  if (profileError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="eg-card max-w-md w-full">
+          <ErrorState message={`تعذر تحميل بيانات حسابك: ${profileError}`} onRetry={() => void refreshProfile()} />
+        </div>
+      </div>
+    );
+  }
   if (!profile) return <div className="min-h-screen flex items-center justify-center"><LoadingState /></div>;
   if (!profile.active || !PERMISSIONS[profile.role]) return <PendingActivation />;
   return (

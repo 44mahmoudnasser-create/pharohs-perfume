@@ -501,6 +501,54 @@ async function main() {
     eq(r.rowCount, 0, 'rows deleted by seller');
   });
 
+  console.log('\n▸ Hardening (migration 0902)');
+  await test('API roles cannot read sales.total, for any role', async () => {
+    await rejects(as(c, 'seller', q => q(`select total from public.sales`)), '42501', 'seller total');
+    await rejects(as(c, 'manager', q => q(`select total from public.sales`)), '42501', 'manager total');
+    await as(c, 'seller', q => q(`select id, status from public.sales limit 1`)); // other columns still readable (no throw)
+  });
+  await test('sellers cannot read stock tables directly but still get sale availability', async () => {
+    eq((await as(c, 'seller', q => q(`select count(*)::int n from public.inventory_balances`))).rows[0].n, 0, 'balances');
+    eq((await as(c, 'seller', q => q(`select count(*)::int n from public.inventory_items`))).rows[0].n, 0, 'items');
+    const combos = await val(`select (select count(*) from public.bottle_sizes where active) * (select count(*) from public.oil_types where active)`);
+    eq((await as(c, 'seller', q => q(`select count(*)::int n from public.perfume_sale_options($1)`, [blue.id]))).rows[0].n, combos, 'sale options');
+    eq((await as(c, 'manager', q => q(`select count(*)::int n from public.inventory_balances`))).rows[0].n > 0, true, 'manager sees balances');
+  });
+  await test('sale availability for a ready-made product is limited to granted categories', async () => {
+    // select f(x) always returns a row, so test for NULL rather than counting rows
+    eq((await as(c, 'seller', q => q(`select (public.sale_product_available($1) is not null) ok`, [gift.id]))).rows[0].ok, true, 'granted seller');
+    eq((await as(c, 'nogrant', q => q(`select (public.sale_product_available($1) is not null) ok`, [gift.id]))).rows[0].ok, false, 'ungranted seller');
+    eq((await as(c, 'nogrant', q => q(`select count(*)::int n from public.perfume_sale_options($1)`, [blue.id]))).rows[0].n, 0, 'ungranted perfume options');
+  });
+  await test('save_app_settings: admin only, unknown keys and invalid values are refused', async () => {
+    await rejects(as(c, 'manager', q => q(`select public.save_app_settings($1::jsonb)`, [JSON.stringify({ 'shop.name': 'x' })])), '42501', 'manager');
+    await rejects(as(c, 'admin', q => q(`select public.save_app_settings($1::jsonb)`, [JSON.stringify({ 'shop.secret': 'x' })]), { rollback: true }), 'UNKNOWN_SETTING', 'unknown key');
+    await rejects(as(c, 'admin', q => q(`select public.save_app_settings($1::jsonb)`, [JSON.stringify({ 'shop.timezone': 'Mars/Olympus' })]), { rollback: true }), '22023', 'timezone');
+    await rejects(as(c, 'admin', q => q(`select public.save_app_settings($1::jsonb)`, [JSON.stringify({ 'shop.name': '   ' })]), { rollback: true }), 'INVALID_SETTING', 'blank name');
+  });
+  await test('save_app_settings is all-or-nothing', async () => {
+    const before = await val(`select value #>> '{}' from public.app_settings where key = 'shop.name'`);
+    await rejects(as(c, 'admin', q => q(`select public.save_app_settings($1::jsonb)`,
+      [JSON.stringify({ 'shop.name': 'اسم جديد', 'inventory.allow_negative_stock': 'yes' })])), 'INVALID_SETTING', 'bad flag');
+    eq(await val(`select value #>> '{}' from public.app_settings where key = 'shop.name'`), before, 'name unchanged after failed save');
+    await as(c, 'admin', async q => {
+      await q(`select public.save_app_settings($1::jsonb)`, [JSON.stringify({ 'shop.name': 'اختبار' })]);
+      eq((await q(`select value #>> '{}' v from public.app_settings where key = 'shop.name'`)).rows[0].v, 'اختبار', 'saved');
+    }, { rollback: true });
+  });
+  await test('admin_save_user: admin only, atomic, clears grants for non-sellers, keeps the last admin', async () => {
+    await rejects(as(c, 'manager', q => q(`select public.admin_save_user($1, 'x', 'seller', true, '{}')`, [USERS.seller2.id])), '42501', 'manager');
+    await rejects(as(c, 'admin', q => q(`select public.admin_save_user($1, 'x', 'seller', true, '{}')`, [randomUUID()]), { rollback: true }), 'USER_NOT_FOUND', 'unknown user');
+    await rejects(as(c, 'admin', q => q(`select public.admin_save_user($1, 'x', 'seller', false, '{}')`, [USERS.admin.id]), { rollback: true }), 'LAST_ADMIN', 'last admin');
+    await as(c, 'admin', async q => {
+      await q(`select public.admin_save_user($1, 'اسم جديد', 'seller', true, $2)`, [USERS.seller2.id, [blue.category_id]]);
+      eq((await q(`select full_name from public.app_users where id = $1`, [USERS.seller2.id])).rows[0].full_name, 'اسم جديد', 'profile saved');
+      eq((await q(`select count(*)::int n from public.user_category_access where user_id = $1`, [USERS.seller2.id])).rows[0].n, 1, 'grant saved');
+      await q(`select public.admin_save_user($1, 'اسم جديد', 'manager', true, $2)`, [USERS.seller2.id, [blue.category_id]]);
+      eq((await q(`select count(*)::int n from public.user_category_access where user_id = $1`, [USERS.seller2.id])).rows[0].n, 0, 'grants cleared for a manager');
+    }, { rollback: true });
+  });
+
   console.log('\n▸ Reports');
   await test('reports are consistent with recorded sales and ledger', async () => {
     const from = '2000-01-01', to = '2100-01-01';

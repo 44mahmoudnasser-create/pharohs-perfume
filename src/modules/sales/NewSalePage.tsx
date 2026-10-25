@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { CheckCircle2, ImageOff, Receipt, Trash2 } from "lucide-react";
 import PageHeader from "@/core/ui/PageHeader";
@@ -28,6 +28,7 @@ export default function NewSalePage() {
   // deduction); any change to the cart produces a new key.
   const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
   const [submitting, setSubmitting] = useState(false);
+  const inFlight = useRef(false);
   const [error, setError] = useState("");
   const [done, setDone] = useState<CreateSaleResult | null>(null);
 
@@ -56,15 +57,19 @@ export default function NewSalePage() {
   };
 
   const checkout = async () => {
-    if (submitting || cart.length === 0) return;
+    // a ref, not state: a second click in the same tick must not start another request
+    if (inFlight.current || cart.length === 0) return;
+    inFlight.current = true;
     setSubmitting(true); setError("");
     try {
       const r = await createSale(idempotencyKey, cart, customer.trim(), notes.trim());
       setDone(r);
     } catch (e) {
       setError(errorMessage(e));
+    } finally {
+      inFlight.current = false;
+      setSubmitting(false);
     }
-    setSubmitting(false);
   };
 
   const reset = () => {

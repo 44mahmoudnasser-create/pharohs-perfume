@@ -11,11 +11,11 @@ import type { LineEditorProps, SaleModeDefinition } from "./saleModes";
 /** Line editor for ready-made products that consume one unit of their own stock item. */
 function StockItemLineEditor({ product, onAdd, reservedFor }: LineEditorProps) {
   const { currency, allowNegativeStock } = useShop();
+  // availability only, through a narrow function: sellers can't read inventory tables (migration 0902)
   const stock = useAsync(async () => {
-    const r = unwrap(await supabase.from("v_inventory_stock").select("quantity, unit")
-      .eq("item_id", product.inventory_item_id ?? 0).maybeSingle()) as { quantity: number; unit: string } | null;
-    return r;
-  }, [product.inventory_item_id]);
+    return unwrap(await supabase.rpc("sale_product_available", { p_product_id: product.id })) as
+      { quantity: number; unit: string } | null;
+  }, [product.id]);
   const [qty, setQty] = useState(1);
 
   const stockKey = `item:${product.inventory_item_id}`;

@@ -7,7 +7,6 @@ export type SaleSummary = {
   status: "completed" | "cancelled";
   customer_name: string | null;
   notes: string | null;
-  total: number;
   created_by: string | null;
   created_at: string;
   cancelled_at: string | null;
@@ -68,7 +67,7 @@ export async function cancelSale(saleId: number, reason: string) {
 
 export async function listSales(from: string, to: string, status: string): Promise<SaleSummary[]> {
   let q = supabase.from("sales")
-    .select("id, status, customer_name, notes, total, created_by, created_at, cancelled_at, cancel_reason, sale_lines(product_name, quantity, line_total)")
+    .select("id, status, customer_name, notes, created_by, created_at, cancelled_at, cancel_reason, sale_lines(product_name, quantity, line_total)")
     .gte("created_at", new Date(from + "T00:00:00").toISOString())
     .lt("created_at", new Date(new Date(to + "T00:00:00").getTime() + 86400000).toISOString())
     .order("created_at", { ascending: false })
@@ -78,8 +77,10 @@ export async function listSales(from: string, to: string, status: string): Promi
 }
 
 export async function getSale(id: number): Promise<SaleDetail> {
+  // header columns are explicit: sales.total is not readable through the API (migration 0902)
   const row = unwrap(await supabase.from("sales")
-    .select(`*, sale_lines(id, line_no, product_name, category_name, sale_mode, quantity, list_unit_price, unit_price, line_total,
+    .select(`id, status, customer_name, notes, created_by, created_at, cancelled_at, cancelled_by, cancel_reason,
+             sale_lines(id, line_no, product_name, category_name, sale_mode, quantity, list_unit_price, unit_price, line_total,
              perfume:perfume_sale_line_details(bottle_size_name, bottle_volume_ml, oil_type_name, grams_per_bottle, oil_grams_total, bottles_total),
              components:sale_line_components(id, item_name, unit, quantity_per_unit, quantity_total, source, movement_id))`)
     .eq("id", id).single()) as Omit<SaleDetail, "lines" | "sale_lines"> & { sale_lines: RawLine[] };

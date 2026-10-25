@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { KeyRound, LogOut, Menu, X, type LucideIcon } from "lucide-react";
 import { cn } from "@/core/lib/cn";
 import { useAuth } from "@/core/auth/AuthProvider";
 import ChangePasswordModal from "@/core/auth/ChangePasswordModal";
+import { LoadingState } from "@/core/ui/States";
 
 export type NavItem = {
   to: string;
@@ -132,7 +133,9 @@ export default function AppShell({
         </header>
 
         <main className="flex-1 min-w-0">
-          <div className="max-w-6xl mx-auto"><Outlet /></div>
+          <div className="max-w-6xl mx-auto">
+            <Suspense fallback={<LoadingState />}><Outlet /></Suspense>
+          </div>
         </main>
       </div>
 

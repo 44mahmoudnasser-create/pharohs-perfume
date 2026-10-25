@@ -1,6 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import { supabase } from "@/core/lib/supabase";
+import { errorMessage } from "@/core/lib/errors";
+import { hasPermission, type PermissionMap } from "./access";
 
 export type Profile = {
   id: string;
@@ -13,6 +15,8 @@ export type Profile = {
 type AuthState = {
   session: Session | null;
   profile: Profile | null;
+  /** Set when the signed-in user's profile could not be loaded (network, server). */
+  profileError: string | null;
   loading: boolean;
   /** UI-only check (hides buttons/pages). The database enforces the real rules. */
   can: (permission: string) => boolean;
@@ -24,21 +28,28 @@ type AuthState = {
 const Ctx = createContext<AuthState | null>(null);
 
 /**
- * Reusable auth provider. The role always comes from the app_users table
- * (never from JWT/user_metadata). `permissions` maps role → allowed keys and
- * is supplied by each application.
+ * Auth provider. The role always comes from the app_users table (never from
+ * JWT or user_metadata). `permissions` maps role → allowed keys.
  */
 export function AuthProvider({
   permissions, children,
-}: { permissions: Record<string, readonly string[]>; children: React.ReactNode }) {
+}: { permissions: PermissionMap; children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   const loadProfile = useCallback(async (s: Session | null) => {
-    if (!s) { setProfile(null); return; }
-    const { data } = await supabase.from("app_users")
+    if (!s) { setProfile(null); setProfileError(null); return; }
+    const { data, error } = await supabase.from("app_users")
       .select("id, email, full_name, role, active").eq("id", s.user.id).maybeSingle();
+    if (error) {
+      // don't treat a failed read as "no account": that would show the activation screen
+      setProfile(null);
+      setProfileError(errorMessage(error));
+      return;
+    }
+    setProfileError(null);
     setProfile((data as Profile | null) ?? { id: s.user.id, email: s.user.email ?? "", full_name: null, role: "", active: false });
   }, []);
 
@@ -61,15 +72,16 @@ export function AuthProvider({
   const value = useMemo<AuthState>(() => ({
     session,
     profile,
+    profileError,
     loading,
-    can: (p: string) => !!profile?.active && (permissions[profile.role] ?? []).includes(p),
+    can: (p: string) => hasPermission(profile, permissions, p),
     signIn: async (email, password) => {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
     },
     signOut: async () => { await supabase.auth.signOut(); },
     refreshProfile: () => loadProfile(session),
-  }), [session, profile, loading, permissions, loadProfile]);
+  }), [session, profile, profileError, loading, permissions, loadProfile]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

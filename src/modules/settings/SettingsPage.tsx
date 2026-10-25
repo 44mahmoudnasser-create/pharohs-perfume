@@ -50,17 +50,19 @@ function GeneralSettings() {
   const [error, setError] = useState("");
 
   const save = async () => {
+    if (busy) return;
     if (!form.name.trim()) { setError("اسم المتجر مطلوب"); return; }
     try { new Intl.DateTimeFormat("en", { timeZone: form.timezone }); } catch { setError("المنطقة الزمنية غير صحيحة (مثال: Africa/Cairo)"); return; }
     setBusy(true); setError("");
     try {
-      const updates: [string, unknown][] = [
-        ["shop.name", form.name.trim()], ["shop.currency", form.currency.trim()], ["shop.timezone", form.timezone.trim()],
-        ["inventory.allow_negative_stock", form.negative], ["sales.allow_price_override", form.override],
-      ];
-      for (const [key, value] of updates) {
-        unwrap(await supabase.from("app_settings").update({ value }).eq("key", key).select("key").single());
-      }
+      // one transaction; the database validates every value as well
+      unwrap(await supabase.rpc("save_app_settings", { p_values: {
+        "shop.name": form.name.trim(),
+        "shop.currency": form.currency.trim(),
+        "shop.timezone": form.timezone.trim(),
+        "inventory.allow_negative_stock": form.negative,
+        "sales.allow_price_override": form.override,
+      } }));
       await reload();
       notify.success("تم حفظ الإعدادات");
     } catch (e) { setError(errorMessage(e)); }
@@ -166,8 +168,11 @@ function UserForm({ user, isSelf, onClose, onSaved }: { user: AppUser; isSelf: b
   const save = async () => {
     setBusy(true); setError("");
     try {
-      unwrap(await supabase.from("app_users").update({ full_name: fullName.trim() || null, role, active }).eq("id", user.id).select("id").single());
-      unwrap(await supabase.rpc("set_user_category_access", { p_user_id: user.id, p_category_ids: role === "seller" ? selected : [] }));
+      // one transaction: profile, role, activation and category grants
+      unwrap(await supabase.rpc("admin_save_user", {
+        p_user_id: user.id, p_full_name: fullName.trim() || null, p_role: role, p_active: active,
+        p_category_ids: role === "seller" ? selected : [],
+      }));
       onSaved();
     } catch (e) { setError(errorMessage(e)); setBusy(false); }
   };

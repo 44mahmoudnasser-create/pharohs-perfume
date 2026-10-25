@@ -138,6 +138,12 @@ Apply the files in `supabase/migrations/` **in filename order**. Each depends on
 | 5 | `20261023000500_sales_and_stock_transactions.sql` | sales tables, `sales_create_sale`, `sales_cancel_sale` |
 | 6 | `20261023000600_reporting.sql` | stock view, sales report view, report functions, dashboard summary |
 | 7 | `20261023000700_security_and_policies.sql` | privileges, RLS on every table, user directory view |
+| 8 | `20261024000800_access_and_lifecycle.sql` | sale mode per category, seller category grants, deletes, auto-enabled oils/sizes |
+| 9 | `20261024000900_selling_and_viewing_are_separate.sql` | (superseded in part by 0901) catalogue and invoice visibility rules |
+| 10 | `20261025000100_granted_categories_only.sql` | sellers sell and see only granted categories |
+| 11 | `20261025000200_hardening.sql` | `sales.total` hidden from API roles, stock tables admin/manager only, atomic settings and user saves with server validation |
+
+Migrations 9 and 10 change the same policies as 8; applying them in order gives the final state.
 
 `seed.sql` contains **demo data for development only**. Do not run it on production.
 
@@ -237,7 +243,11 @@ Write the SQL in the new file (never edit an already-applied migration), test lo
 | `npm run lint` | ESLint |
 | `npm run typecheck` | TypeScript (strict) |
 | `npm run build` | production build |
-| `npm run db:test` | applies all migrations + seed to a throwaway local **PostgreSQL 17** and runs 34 tests |
+| `npm run test:unit` | unit tests (Vitest) for error mapping, formatting, CSV, and the role/permission map |
+| `npm run db:test` | applies all migrations + seed to a throwaway local **PostgreSQL 17** and runs 51 tests |
+
+Last recorded run: lint, typecheck, unit tests (23), database tests (51) and the production build all pass.
+Not verified here: a hosted Supabase project, the Vercel deployment, and the GitHub Pages workflow.
 
 The database suite downloads an embedded PostgreSQL through npm (no Docker needed). It emulates only the
 Supabase pieces it needs (`auth.users`, `auth.uid()`, the `anon` / `authenticated` roles and default
@@ -330,6 +340,13 @@ or any `VITE_*` variable. Anything prefixed `VITE_` ends up in the public JavaSc
 - **No offline mode / PWA**, and no receipt printing.
 - **Not tested against a hosted Supabase project.** The SQL was tested against plain PostgreSQL 17
   with emulated Supabase auth. Applying it to your project is the first real deployment.
+- **Sellers can still see availability counts** on the sale screen (for oils, bottles and ready-made items).
+  Those come through narrow functions, not the stock tables, and are needed to sell.
+- **Invoice lists load up to 1000 sales** in one request with no server-side pagination yet.
+- **Keyboard and screen-reader support** covers the controls that already had labels. A full accessibility
+  pass (focus trapping in dialogs, announced validation errors) has not been done.
+- **Deleting an unused seeded item is blocked** because the seed creates opening stock movements. Use
+  deactivation for those items.
 
 ## 8. Troubleshooting
 
